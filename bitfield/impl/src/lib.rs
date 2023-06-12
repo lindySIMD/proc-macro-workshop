@@ -18,7 +18,18 @@ impl BitFieldBuilder {
         self.item.fields.iter()
     }
 
-    fn get_size_expr(&self) -> TokenStream2 {
+    fn get_bits_size_expr(&self) -> TokenStream2 {
+        let mut size = quote!(0usize);
+        for field in self.iter_fields() {
+            let ident = &field.ty;
+            size = quote!(
+                #size + <#ident as Specifier>::BITS
+            );
+        }
+        quote!((#size))
+    }
+
+    fn get_bytes_size_expr(&self) -> TokenStream2 {
         let mut size = quote!(0usize);
         for field in self.iter_fields() {
             let ident = &field.ty;
@@ -58,15 +69,17 @@ impl BitFieldBuilder {
     fn get_struct_expr(&self) -> TokenStream2 {
         let vis = &self.item.vis;
         let ident = &self.item.ident;
-        let size = self.get_size_expr();
+        let bytes_size = self.get_bytes_size_expr();
+        let bits_size = self.get_bits_size_expr();
         let setters_and_getters = self.get_setters_and_getters();
         quote!(
             #vis struct #ident {
-                data: [u8; #size]
+                data: [u8; #bytes_size]
             }
 
             impl BitField for #ident {
-                const SIZE: usize = #size;
+                const SIZE: usize = #bytes_size;
+                type SizeMod8 = <bitfield::checks::SizeMarker as bitfield::checks::TotalSizeMod8<{#bits_size % 8}>>::Size;
                 fn get_byte(&self, index: usize) -> u8 {
                     self.data[index]
                 }
@@ -79,7 +92,7 @@ impl BitFieldBuilder {
             impl #ident {
                 pub fn new() -> #ident {
                     Self {
-                        data: [0u8; #size]
+                        data: [0u8; #bytes_size]
                     }
                 }
                 #setters_and_getters
@@ -120,6 +133,27 @@ pub fn create_b_types(_input: TokenStream) -> TokenStream {
             impl Specifier for #ident {
                 const BITS: usize = #i;
                 type SetGetType = #set_get_type;
+            }
+        );
+    }
+    out.into()
+}
+
+#[proc_macro]
+pub fn create_size_marker_types(_input: TokenStream) -> TokenStream {
+    let num_names = [
+        "Zero", "One", "Two", "Three", "Four", "Five", "Six", "Seven",
+    ];
+    let mut out = quote!(
+        pub struct SizeMarker;
+    );
+    for (i, num) in num_names.iter().enumerate() {
+        let mod8ident = format_ident!("{}Mod8", num);
+        out = quote!(
+            #out
+            pub struct #mod8ident;
+            impl TotalSizeMod8<#i> for SizeMarker {
+                type Size = #mod8ident;
             }
         );
     }

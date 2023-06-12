@@ -1,4 +1,7 @@
-use std::ops::{Index, IndexMut, Shl, Shr};
+use std::{
+    marker::PhantomData,
+    ops::{Index, IndexMut, Shl, Shr},
+};
 
 // Crates that have the "proc-macro" crate type are only allowed to export
 // procedural macros. So we cannot have one crate that defines procedural macros
@@ -52,6 +55,23 @@ const fn head_bits_mask(bit_offset: usize) -> u8 {
 //         <Self as crate::BitField>::get_field::<B1, { 0 + <B2 as Specifier>::BITS }>(self)
 //     }
 // }
+// pub struct C<T: checks::TotalSizeIsMultipleOfEightBits> {
+//     t: std::marker::PhantomData<T>,
+// }
+
+// impl C<checks::SevenMod8> {}
+
+// struct _M;
+
+// trait _SizeOk: checks::TotalSizeIsMultipleOfEightBits {}
+
+// impl _SizeOk for _M {}
+
+// impl M {
+// fn new() -> impl checks::TotalSizeIsMultipleOfEightBits {
+//     M
+// }
+// }
 
 const fn shl_over(val: u8, shift: usize) -> u8 {
     match val.checked_shl(shift as u32) {
@@ -62,6 +82,7 @@ const fn shl_over(val: u8, shift: usize) -> u8 {
 
 pub trait BitField {
     const SIZE: usize;
+    type SizeMod8: checks::TotalSizeIsMultipleOfEightBits;
     fn get_byte(&self, index: usize) -> u8;
     fn set_byte(&mut self, index: usize, byte: u8);
 
@@ -125,7 +146,19 @@ pub trait BitField {
 
 create_b_types!();
 
-pub mod checks {}
+pub mod checks {
+    use bitfield_impl::create_size_marker_types;
+
+    pub trait TotalSizeIsMultipleOfEightBits {}
+    // pub trait TotalSize<const SIZE: usize> {}
+    pub trait TotalSizeMod8<const SIZE: usize> {
+        type Size;
+    }
+    create_size_marker_types!();
+    impl TotalSizeIsMultipleOfEightBits for ZeroMod8 {}
+}
+
+// const fn size_mod_8<const SIZE: usize>(size: SIZE) ->
 
 pub trait AsBytes {
     const WIDTH: usize;
