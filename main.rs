@@ -18,10 +18,6 @@ pub struct MyFourBytes {
 
 fn main() {
     assert_eq!(std::mem::size_of::<MyFourBytes>(), 4);
-    let m = 14u16;
-    let bytes = m.to_le_bytes();
-    let bytes = bytes << 1;
-    let new_m = u16::from_le_bytes(bytes);
 }
 
 // use sorted::sorted;
