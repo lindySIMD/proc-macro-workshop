@@ -1,7 +1,4 @@
-use std::{
-    marker::PhantomData,
-    ops::{Index, IndexMut, Shl, Shr},
-};
+use std::ops::{Index, IndexMut, Shl, Shr};
 
 // Crates that have the "proc-macro" crate type are only allowed to export
 // procedural macros. So we cannot have one crate that defines procedural macros
@@ -15,8 +12,8 @@ use std::{
 //
 // From the perspective of a user of this crate, they get all the necessary APIs
 // (macro, trait, struct) through the one bitfield crate.
-pub use bitfield_impl::bitfield;
 use bitfield_impl::create_b_types;
+pub use bitfield_impl::{bitfield, BitfieldSpecifier};
 
 // TODO other things
 
@@ -29,6 +26,68 @@ pub trait Specifier {
     const SHIFT_AMOUNT: usize = Self::SetGetType::BITS - Self::BITS;
     const OCCUPIED_BYTES: usize = Self::SetGetType::WIDTH - (Self::SHIFT_AMOUNT / 8);
 }
+
+pub trait BitfieldSpecifier {
+    type Specifier: Specifier;
+    type InOutType: BitfieldFrom<<Self::Specifier as Specifier>::SetGetType>;
+}
+
+impl BitfieldSpecifier for bool {
+    type Specifier = B1;
+    type InOutType = bool;
+}
+
+impl BitfieldFrom<u8> for bool {
+    fn from(val: u8) -> Self {
+        val != 0
+    }
+}
+
+pub trait BitfieldFrom<T> {
+    fn from(val: T) -> Self;
+}
+
+impl<T> BitfieldFrom<T> for T
+where
+    T: From<T>,
+{
+    fn from(val: T) -> Self {
+        <Self as From<Self>>::from(val)
+    }
+}
+
+// impl<T, F> BitfieldFrom<F> for T
+// where
+//     // T: From<T> + Specifier,
+//     F: Specifier,
+//     T: From<T>,
+// {
+//     fn from(val: T) -> Self {
+//         <Self as From<Self>>::from(val)
+//     }
+// }
+
+impl<T> BitfieldSpecifier for T
+where
+    T: Specifier,
+{
+    type Specifier = T;
+    type InOutType = T::SetGetType;
+}
+
+fn me(a: bool) -> u8 {
+    let m: <<bool as BitfieldSpecifier>::Specifier as Specifier>::SetGetType = a.into();
+    m
+}
+
+// impl<T, F> From<F> for T
+// where
+//     T: BitfieldSpecifier,
+//     <T::Specifier as Specifier>::SetGetType: From<
+
+// impl<T, F> From<F> for T
+// where
+//     F: BitfieldSpecifier<Specifier = {}
 
 const fn tail_bits_mask(bit_offset: usize) -> u8 {
     u8::MAX >> bit_offset
@@ -71,6 +130,10 @@ const fn head_bits_mask(bit_offset: usize) -> u8 {
 // fn new() -> impl checks::TotalSizeIsMultipleOfEightBits {
 //     M
 // }
+// }
+
+// fn me(val: u8) -> u16 {
+//     <u8 as Into<u16>>::into(val)
 // }
 
 const fn shl_over(val: u8, shift: usize) -> u8 {
