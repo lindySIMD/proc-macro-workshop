@@ -1,5 +1,3 @@
-use core::num;
-
 use proc_macro::TokenStream;
 use proc_macro2::{Ident, TokenStream as TokenStream2};
 use quote::{format_ident, quote};
@@ -107,6 +105,14 @@ impl BitFieldBuilder {
                 fn set_byte(&mut self, index: usize, byte: u8) {
                     self.data[index] = byte;
                 }
+
+                fn get_data(&self) -> &[u8] {
+                    &self.data
+                }
+
+                fn get_data_mut(&mut self) -> &mut [u8] {
+                    &mut self.data
+                }
             }
 
             impl #ident {
@@ -165,24 +171,37 @@ impl BitfieldSpecifierBuilder {
         let specifier = quote!(bitfield::#b_ident);
         let set_get_ty = quote!(<#specifier as bitfield::Specifier>::SetGetType);
         let mut from_arms = quote!();
+        let mut const_var_defs = quote!();
         for var in enum_data.variants.iter() {
             let var_ident = &var.ident;
+            let var_caps_string = var_ident.to_string().to_uppercase();
+            let var_const_ident = format_ident!("BFCONST_{}", var_caps_string);
             eprintln!("VAR: {}", var_ident);
             from_arms = quote!(
                 #from_arms
-                x if x == Self::#var_ident as #set_get_ty => Self::#var_ident,
+                Self::#var_const_ident => Self::#var_ident,
+            );
+            const_var_defs = quote!(
+                #const_var_defs
+                const #var_const_ident: #set_get_ty = Self::#var_ident as #set_get_ty;
             );
         }
+        let ident_string = ident.to_string();
         quote!(
             impl bitfield::BitfieldSpecifier for #ident {
                 type Specifier = #specifier;
                 type InOutType = #ident;
             }
 
+            impl #ident {
+                #const_var_defs
+            }
+
             impl bitfield::BitfieldFrom<#set_get_ty> for #ident {
                 fn from(val: #set_get_ty) -> Self {
                     match val {
                         #from_arms
+                        _ => panic!("Got invalid bits: 0b{:b} for {}", val, #ident_string),
                     }
                 }
             }
