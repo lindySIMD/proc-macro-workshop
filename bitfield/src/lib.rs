@@ -29,6 +29,19 @@ pub trait Specifier {
     const OCCUPIED_BYTES: usize = Self::SetGetType::WIDTH - (Self::SHIFT_AMOUNT / 8);
 }
 
+// const _: [(); 4] = [(); 1];
+
+// const _: () = {
+//     trait Me {
+//         fn m() -> [(); 8];
+//     }
+//     impl Me for A {
+//         fn m() -> [(); 8] {
+//             [(); 1]
+//         }
+//     }
+// };
+
 pub trait BitfieldSpecifier {
     type Specifier: Specifier;
     type InOutType;

@@ -1,9 +1,9 @@
 use proc_macro::TokenStream;
 use proc_macro2::{Ident, Span, TokenStream as TokenStream2};
-use quote::{format_ident, quote};
+use quote::{format_ident, quote, quote_spanned};
 use syn::{
-    parse::Parse, parse_macro_input, Data, DataEnum, DeriveInput, Error, Field, Item, ItemStruct,
-    Visibility,
+    parse::Parse, parse_macro_input, Data, DataEnum, DeriveInput, Error, Expr, ExprLit, Field,
+    Item, ItemStruct, Lit, Visibility,
 };
 
 #[proc_macro_attribute]
@@ -84,6 +84,31 @@ impl BitFieldBuilder {
         setters_and_getters
     }
 
+    fn get_bits_checks(&self) -> TokenStream2 {
+        let mut checks = quote!();
+        for field in self.iter_fields() {
+            let Some(attr) = field.attrs.iter().find(|&attr| {
+                attr.path().is_ident("bits")
+            }) else {
+                continue
+            };
+            let attr = attr.meta.require_name_value().expect("wasn't name value");
+            let Expr::Lit(ExprLit { lit: Lit::Int(bits_val), ..}) = &attr.value else {
+                panic!("Wasn't literal value");
+            };
+            let fty = &field.ty;
+            let specifier_ty = quote!(<#fty as bitfield::BitfieldSpecifier>::Specifier);
+            let this_check = quote_spanned! {bits_val.span()=>
+                const _: [(); #bits_val] = [(); #specifier_ty::BITS];
+            };
+            checks = quote!(
+                #checks
+                #this_check
+            );
+        }
+        checks
+    }
+
     fn get_struct_expr(&self) -> TokenStream2 {
         let vis = &self.item.vis;
         let ident = &self.item.ident;
@@ -129,8 +154,10 @@ impl BitFieldBuilder {
     fn build(self) -> TokenStream {
         // let size_expr = self.get_size_expr();
         let struct_expr = self.get_struct_expr();
+        let checks = self.get_bits_checks();
         quote!(
             #struct_expr
+            #checks
         )
         .into()
     }
