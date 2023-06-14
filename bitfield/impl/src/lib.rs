@@ -193,19 +193,18 @@ impl BitfieldSpecifierBuilder {
         let num_bits = num_vars.checked_ilog2().unwrap() as usize;
         let b_ident = format_ident!("B{}", num_bits);
         let max_discriminant_val = 2usize.pow(num_bits as u32) - 1;
-        // let max_discriminant_ident = format_ident!("{}", max_discriminant_val);
-        // eprintln!("max ident: {}", quote!(#max_discriminant_val));
         let specifier = quote!(bitfield::#b_ident);
         let set_get_ty = quote!(<#specifier as bitfield::Specifier>::SetGetType);
         let mut from_arms = quote!();
         let mut const_var_defs = quote!();
-        let discriminant_check_ident = format_ident!("{}DiscriminantCheck", ident);
-        let mut discriminant_check_impls = quote!();
+        let mut discriminant_checks = quote!();
+        let discriminant_in_range_ident = format_ident!(
+            "_assert_discriminant_in_range_for_{}",
+            ident.to_string().to_lowercase()
+        );
         for var in enum_data.variants.iter() {
             let var_ident = &var.ident;
-            let var_struct_ident = format_ident!("{}VariantCheck", var_ident);
-            let var_caps_string = var_ident.to_string().to_uppercase();
-            let var_const_ident = format_ident!("BFCONST_{}", var_caps_string);
+            let var_const_ident = format_ident!("BFCONST_{}", var_ident.to_string().to_uppercase());
             from_arms = quote!(
                 #from_arms
                 Self::#var_const_ident => Self::#var_ident,
@@ -214,17 +213,24 @@ impl BitfieldSpecifierBuilder {
                 #const_var_defs
                 const #var_const_ident: #set_get_ty = Self::#var_ident as #set_get_ty;
             );
-            discriminant_check_impls = quote!(
-                #discriminant_check_impls
-                struct #var_struct_ident;
-                impl #discriminant_check_ident<<bool as bitfield::checks::DiscriminantCheck<{#ident::#var_const_ident <= #max_discriminant_val as #set_get_ty}>>::Valid> for #var_struct_ident {}
-                // impl
+            let this_discriminant_in_range = format_ident!(
+                "{}_{}",
+                discriminant_in_range_ident,
+                var_ident.to_string().to_lowercase(),
+                span = var_ident.span()
+            );
+            let assert_this_discriminant_in_range =
+                format_ident!("check{}", this_discriminant_in_range);
+            discriminant_checks = quote!(
+                #discriminant_checks
+                fn #this_discriminant_in_range<T>() where T: bitfield::checks::DiscriminantInRange {}
+                fn #assert_this_discriminant_in_range() {
+                    #this_discriminant_in_range::<<bool as bitfield::checks::DiscriminantCheck<{#ident::#var_const_ident <= #max_discriminant_val as #set_get_ty}>>::Valid>();
+                }
+                // #discriminant_in_range_ident::<<bool as bitfield::checks::DiscriminantCheck<{#ident::#var_const_ident <= #max_discriminant_val as #set_get_ty}>>::Valid>();
             );
         }
         let ident_string = ident.to_string();
-        let lower_ident_string = ident_string.to_lowercase();
-        let discriminant_check_mod_ident =
-            format_ident!("{}_discriminant_check", lower_ident_string);
         quote!(
             impl bitfield::BitfieldSpecifier for #ident {
                 type Specifier = #specifier;
@@ -235,12 +241,14 @@ impl BitfieldSpecifierBuilder {
                 #const_var_defs
             }
 
-            mod #discriminant_check_mod_ident {
-                use super::*;
-                trait #discriminant_check_ident<T: bitfield::checks::DiscriminantInRange> {}
-                #discriminant_check_impls
-            }
+            const _: () = {
+                #discriminant_checks
+                // fn #discriminant_in_range_ident<T>() where T: bitfield::checks::DiscriminantInRange {}
 
+                // fn assert_all() {
+                //     #discriminant_checks
+                // }
+            };
 
             impl bitfield::BitfieldFrom<#set_get_ty> for #ident {
                 fn from(val: #set_get_ty) -> Self {

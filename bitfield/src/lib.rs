@@ -17,7 +17,6 @@ use std::{
 // (macro, trait, struct) through the one bitfield crate.
 use bitfield_impl::create_b_types;
 pub use bitfield_impl::{bitfield, BitfieldSpecifier};
-
 // TODO other things
 
 pub trait Specifier {
@@ -271,25 +270,8 @@ pub trait BitField {
 
 create_b_types!();
 
-// fn get_val<const M: usize, T>() -> T {
-//     <T
-//     todo!()
-// }
-trait My {
-    type MyType: Default;
-    fn get() -> Self::MyType {
-        Self::MyType::default()
-    }
-}
-struct Me;
-impl My for Me {
-    type MyType = <Me as checks::DiscriminantCheck<{ 4 > 3 }>>::Valid;
-}
-
-fn m() -> checks::True {
-    <Me as My>::get()
-}
-
+// This trick for enforcing compile time checks is HUGE:
+//  https://stackoverflow.com/questions/32764797/how-to-enforce-that-a-type-implements-a-trait-at-compile-time
 pub mod checks {
     use bitfield_impl::create_size_marker_types;
     pub trait TotalSizeIsMultipleOfEightBits {}
