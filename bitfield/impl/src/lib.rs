@@ -1,5 +1,5 @@
 use proc_macro::TokenStream;
-use proc_macro2::{Ident, TokenStream as TokenStream2};
+use proc_macro2::{Ident, Span, TokenStream as TokenStream2};
 use quote::{format_ident, quote};
 use syn::{
     parse::Parse, parse_macro_input, Data, DataEnum, DeriveInput, Error, Field, Item, ItemStruct,
@@ -158,6 +158,30 @@ struct BitfieldSpecifierBuilder {
     enum_data: DataEnum,
 }
 
+impl Parse for BitfieldSpecifierBuilder {
+    fn parse(input: syn::parse::ParseStream) -> syn::Result<Self> {
+        let input: DeriveInput = input.parse()?;
+        let DeriveInput {
+            vis, ident, data, ..
+        } = input;
+        let Data::Enum(enum_data) = data else {
+            return Err(Error::new(Span::call_site(), "BitfieldSpecifier expected an enum"));
+        };
+        let num_variants = enum_data.variants.len();
+        if !num_variants.is_power_of_two() {
+            return Err(Error::new(
+                Span::call_site(),
+                "BitfieldSpecifier expected a number of variants which is a power of 2",
+            ));
+        }
+        Ok(Self {
+            _vis: vis,
+            ident,
+            enum_data,
+        })
+    }
+}
+
 impl BitfieldSpecifierBuilder {
     fn build(self) -> TokenStream {
         let Self {
@@ -168,15 +192,20 @@ impl BitfieldSpecifierBuilder {
         let num_vars = enum_data.variants.len();
         let num_bits = num_vars.checked_ilog2().unwrap() as usize;
         let b_ident = format_ident!("B{}", num_bits);
+        let max_discriminant_val = 2usize.pow(num_bits as u32) - 1;
+        // let max_discriminant_ident = format_ident!("{}", max_discriminant_val);
+        // eprintln!("max ident: {}", quote!(#max_discriminant_val));
         let specifier = quote!(bitfield::#b_ident);
         let set_get_ty = quote!(<#specifier as bitfield::Specifier>::SetGetType);
         let mut from_arms = quote!();
         let mut const_var_defs = quote!();
+        let discriminant_check_ident = format_ident!("{}DiscriminantCheck", ident);
+        let mut discriminant_check_impls = quote!();
         for var in enum_data.variants.iter() {
             let var_ident = &var.ident;
+            let var_struct_ident = format_ident!("{}VariantCheck", var_ident);
             let var_caps_string = var_ident.to_string().to_uppercase();
             let var_const_ident = format_ident!("BFCONST_{}", var_caps_string);
-            eprintln!("VAR: {}", var_ident);
             from_arms = quote!(
                 #from_arms
                 Self::#var_const_ident => Self::#var_ident,
@@ -185,8 +214,17 @@ impl BitfieldSpecifierBuilder {
                 #const_var_defs
                 const #var_const_ident: #set_get_ty = Self::#var_ident as #set_get_ty;
             );
+            discriminant_check_impls = quote!(
+                #discriminant_check_impls
+                struct #var_struct_ident;
+                impl #discriminant_check_ident<<bool as bitfield::checks::DiscriminantCheck<{#ident::#var_const_ident <= #max_discriminant_val as #set_get_ty}>>::Valid> for #var_struct_ident {}
+                // impl
+            );
         }
         let ident_string = ident.to_string();
+        let lower_ident_string = ident_string.to_lowercase();
+        let discriminant_check_mod_ident =
+            format_ident!("{}_discriminant_check", lower_ident_string);
         quote!(
             impl bitfield::BitfieldSpecifier for #ident {
                 type Specifier = #specifier;
@@ -196,6 +234,13 @@ impl BitfieldSpecifierBuilder {
             impl #ident {
                 #const_var_defs
             }
+
+            mod #discriminant_check_mod_ident {
+                use super::*;
+                trait #discriminant_check_ident<T: bitfield::checks::DiscriminantInRange> {}
+                #discriminant_check_impls
+            }
+
 
             impl bitfield::BitfieldFrom<#set_get_ty> for #ident {
                 fn from(val: #set_get_ty) -> Self {
@@ -207,31 +252,6 @@ impl BitfieldSpecifierBuilder {
             }
         )
         .into()
-    }
-}
-
-impl Parse for BitfieldSpecifierBuilder {
-    fn parse(input: syn::parse::ParseStream) -> syn::Result<Self> {
-        let in_span = input.span();
-        let input: DeriveInput = input.parse()?;
-        let DeriveInput {
-            vis, ident, data, ..
-        } = input;
-        let Data::Enum(enum_data) = data else {
-            return Err(Error::new(in_span, "Can only derive BitfieldSpecifier for enums"));
-        };
-        let num_variants = enum_data.variants.len();
-        if !num_variants.is_power_of_two() {
-            return Err(Error::new(
-                in_span,
-                "Can only derive BitfieldSpecifier for enums with power of 2 num variants",
-            ));
-        }
-        Ok(Self {
-            _vis: vis,
-            ident,
-            enum_data,
-        })
     }
 }
 

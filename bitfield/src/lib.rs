@@ -271,10 +271,44 @@ pub trait BitField {
 
 create_b_types!();
 
+// fn get_val<const M: usize, T>() -> T {
+//     <T
+//     todo!()
+// }
+trait My {
+    type MyType: Default;
+    fn get() -> Self::MyType {
+        Self::MyType::default()
+    }
+}
+struct Me;
+impl My for Me {
+    type MyType = <Me as checks::DiscriminantCheck<{ 4 > 3 }>>::Valid;
+}
+
+fn m() -> checks::True {
+    <Me as My>::get()
+}
+
 pub mod checks {
     use bitfield_impl::create_size_marker_types;
-
     pub trait TotalSizeIsMultipleOfEightBits {}
+    #[derive(Default)]
+    pub struct True;
+    #[derive(Default)]
+    pub struct False;
+    pub trait DiscriminantCheck<const VALID: bool> {
+        type Valid;
+    }
+    impl<T> DiscriminantCheck<true> for T {
+        type Valid = True;
+    }
+    impl<T> DiscriminantCheck<false> for T {
+        type Valid = False;
+    }
+    pub trait DiscriminantInRange {}
+    impl DiscriminantInRange for True {}
+    // impl DiscriminantInRange
     // pub trait TotalSize<const SIZE: usize> {}
     pub trait TotalSizeMod8<const SIZE: usize> {
         type Size;
